@@ -20,5 +20,5 @@ setup(
     author='shinchana1011',
     author_email='shinchanar.ai23@bmsce.ac.in',
     packages=find_packages(),
-    install_requires=get_requirements('requirement.txt')
+    install_requires=get_requirements('requirements.txt')
 )
