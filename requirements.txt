@@ -1,8 +1,10 @@
+Flask
 pandas
-numpy 
+numpy
+scikit-learn
 seaborn
-catboost
 xgboost
+catboost
 dill
 Flask
 -e .
