@@ -1,8 +1,6 @@
-FROM python:3.11-slim
+FROM python:3.8-slim-buster
 WORKDIR /app
-RUN apt update && apt install -y git && apt clean
-RUN pip install --upgrade pip
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
-CMD ["python", "application.py"]
+RUN apt update -y && apt install awscli -y
+RUN pip install -r requirements.txt
+CMD ["python3", "app.py"]
