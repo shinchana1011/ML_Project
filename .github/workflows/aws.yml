@@ -1,33 +1,84 @@
-{
-  "cpu": 512,
-  "environment": [],
-  "environmentFiles": [],
-  "essential": true,
-  "image": "040291911741.dkr.ecr.us-east-1.amazonaws.com/student-performance:latest",
-  "logConfiguration": {
-    "logDriver": "awslogs",
-    "options": {
-      "awslogs-group": "/ecs/",
-      "awslogs-create-group": "true",
-      "awslogs-region": "us-east-1",
-      "awslogs-stream-prefix": "ecs"
-    },
-    "secretOptions": []
-  },
-  "memory": 1024,
-  "memoryReservation": 1024,
-  "mountPoints": [],
-  "name": "student-performance-container",
-  "portMappings": [
-    {
-      "appProtocol": "http",
-      "containerPort": 5000,
-      "hostPort": 5000,
-      "name": "student-performance-container-5000-tcp",
-      "protocol": "tcp"
-    }
-  ],
-  "systemControls": [],
-  "ulimits": [],
-  "volumesFrom": []
-}
+name: Build and Deploy Python App to AWS ECS - student-performance
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: student-performance
+  ECS_SERVICE: student-performance-task-service-yrf79ih9
+  ECS_CLUSTER: student-performance-cluster
+  ECS_TASK_DEFINITION: .aws/task-definition.json
+  CONTAINER_NAME: student-performance-container
+
+jobs:
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, Tag and Push Docker image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Upload task definition artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecs-task
+          path: ${{ env.ECS_TASK_DEFINITION }}
+
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: Production
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download task definition
+        uses: actions/download-artifact@v4
+        with:
+          name: ecs-task
+          path: .aws/
+
+      - name: Fill in the new image ID in task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build.outputs.image }}
+
+      - name: Deploy updated task definition to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
